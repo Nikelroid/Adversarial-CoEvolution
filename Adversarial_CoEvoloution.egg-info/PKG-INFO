@@ -1,9 +1,0 @@
-Metadata-Version: 2.4
-Name: Adversarial-CoEvoloution
-Version: 0.1
-Author: VLAvengers
-Requires-Dist: pygame
-Requires-Dist: rlcard
-Requires-Dist: pettingzoo
-Dynamic: author
-Dynamic: requires-dist

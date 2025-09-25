@@ -1,6 +1,0 @@
-setup.py
-Adversarial_CoEvoloution.egg-info/PKG-INFO
-Adversarial_CoEvoloution.egg-info/SOURCES.txt
-Adversarial_CoEvoloution.egg-info/dependency_links.txt
-Adversarial_CoEvoloution.egg-info/requires.txt
-Adversarial_CoEvoloution.egg-info/top_level.txt
