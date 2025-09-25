@@ -3,7 +3,6 @@
 This repository implements adversarial RL training for a 2-player Gin Rummy game. We use PettingZoo's environment for the game logic, ma-gym for multi-agent wrappers if needed, and Stable-Baselines3 to train an RL agent (e.g., PPO) against a fixed LLM enhancer opponent. The focus is on reinforcing the RL model through iterative play to achieve high win rates.
 Gin Rummy involves a 52-card deck where players draw and discard to form melds (3+ cards of same rank or sequence in suit), aiming to minimize deadwood points. Knock with ≤10 deadwood or go gin (0 deadwood) to score against the opponent.
 
----
 
 ## Requirements
 - Python 3.8+
@@ -12,14 +11,12 @@ Gin Rummy involves a 52-card deck where players draw and discard to form melds (
 - `stable-baselines3`
 - `gymnasium`
 
----
 
 ## Installation
 ```bash
 pip install pettingzoo[classic] ma-gym stable-baselines3 gymnasium
 ```
 
----
 
 ## Usage
 Set up the environment:
@@ -38,15 +35,13 @@ model.save("gin_rummy_rl")
 
 See `train.py` for details.
 
----
 
 ## Contributing
+
 Contributions welcome! Fork, improve (e.g., LLM integration), and submit PRs.
 
----
 
 ## Description
-
 
 Vision-language models (VLMs) and their extensions, such as vision-language-action (VLA) models, represent a transformative intersection of computer vision (CV) and natural language processing (NLP), enabling agents to interpret visual data through linguistic reasoning. In the context of multiplayer games like Gin Rummy, these models facilitate tasks requiring real-time decision-making, such as strategy optimization, card melding, and adversarial play. This survey synthesizes recent advancements up to 2025, drawing from key literature on model architectures, optimization strategies, datasets, and applications. It expands on the project README by providing in-depth technical details, feasibility considerations for student projects, and broader implications, while emphasizing balanced views on challenges like computational overhead and ethical concerns.
 Evolution and Key Concepts of VLMs and VLA Models in Games
