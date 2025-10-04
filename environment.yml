@@ -14,4 +14,4 @@ dependencies:
   - seaborn
   - pillow
   - pip:
-      - -r file:requirements.txt
+      - -r requirements.txt
