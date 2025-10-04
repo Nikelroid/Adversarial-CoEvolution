@@ -6,5 +6,7 @@ class RandomAgent(Agent):
         self.env = env
 
     def do_action(self):
-        return self.env.get_valid_action(self.player)
+        observation, _, _, _, _ = self.env.last()
+        mask = observation["action_mask"]
+        return self.env.action_space(self.player).sample(mask)
 
