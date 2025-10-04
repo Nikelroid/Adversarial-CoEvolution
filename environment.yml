@@ -1,0 +1,17 @@
+name: marl
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.11
+  - pip
+  - numpy
+  - matplotlib
+  - jupyter
+  - opencv
+  - scipy
+  - pandas
+  - seaborn
+  - pillow
+  - pip:
+      - -r file:requirements.txt

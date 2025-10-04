@@ -1,2 +1,4 @@
 .venv/
 Adversarial_CoEvoloution.egg-info/
+.vscode/
+dist/
