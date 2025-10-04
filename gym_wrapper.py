@@ -75,7 +75,7 @@ class GinRummySB3Wrapper(gym.Env):
         if termination or truncation:
             self.env.step(None)
         else:
-            action = self.opponent_agent.do_action()
+            action = self.opponent_policy.do_action()
             self.env.step(action)
     
     def step(self, action):
