@@ -54,9 +54,11 @@ class GinRummySB3Wrapper(gym.Env):
         if self.randomize_position and random.random() < 0.5:
             self.training_agent = 'player_1'
             self.opponent_agent = 'player_0'
+            self.opponent_policy.set_player('player_0')
         else:
             self.training_agent = 'player_0'
             self.opponent_agent = 'player_1'
+            self.opponent_policy.set_player('player_1')
         
         # Play until it's the training agent's turn
         while True:
