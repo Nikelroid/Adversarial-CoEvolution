@@ -224,6 +224,7 @@ def train_ppo(
     eval_freq=10_000,
     n_eval_episodes=10,
     randomize_position=True,
+    wandb_project=WANDB_PROJECT,
     wandb_run_name=None,
     wandb_config=None,
 ):
