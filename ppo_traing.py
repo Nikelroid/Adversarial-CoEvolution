@@ -26,6 +26,15 @@ import wandb
 from gym_wrapper import GinRummySB3Wrapper
 from agents.random_agent import RandomAgent
 
+# ============================================
+# W&B Configuration - Works on Colab & Local
+# ============================================
+WANDB_API_KEY = "41fe78a601dfc0909950ad6ec7e6c4fb042d032a"  # Replace with your actual API key
+WANDB_PROJECT = "Adversarial-CoEvolution"
+
+# Login to W&B
+wandb.login(key=WANDB_API_KEY)
+
 
 class MaskedGinRummyPolicy(ActorCriticPolicy):
     """
@@ -203,7 +212,6 @@ def train_ppo(
     eval_freq=10_000,
     n_eval_episodes=10,
     randomize_position=True,
-    wandb_project="gin-rummy-ppo",
     wandb_run_name=None,
     wandb_config=None,
 ):
@@ -218,7 +226,6 @@ def train_ppo(
         eval_freq: Frequency to evaluate the model
         n_eval_episodes: Number of episodes for evaluation
         randomize_position: Whether to randomize training agent position each episode
-        wandb_project: W&B project name
         wandb_run_name: W&B run name (optional)
         wandb_config: Additional config dict for W&B (optional)
     """
@@ -247,7 +254,7 @@ def train_ppo(
         config.update(wandb_config)
     
     wandb.init(
-        project=wandb_project,
+        project=WANDB_PROJECT,
         name=wandb_run_name,
         config=config,
         sync_tensorboard=False,  # We're not using tensorboard
@@ -353,7 +360,7 @@ def test_trained_model(model_path, num_episodes=10, log_to_wandb=False):
     print(f"\nTesting model: {model_path}")
     
     if log_to_wandb:
-        wandb.init(project="gin-rummy-ppo", name="model_test", job_type="evaluation")
+        wandb.init(project=WANDB_PROJECT, name="model_test", job_type="evaluation")
     
     # Load model
     model = PPO.load(model_path)
@@ -411,6 +418,29 @@ def test_trained_model(model_path, num_episodes=10, log_to_wandb=False):
         wandb.finish()
 
 
+def setup_wandb_colab(api_key=None):
+    """
+    Setup W&B for Google Colab environment.
+    
+    Args:
+        api_key: Your W&B API key (optional, will check environment variable)
+    """
+    if api_key:
+        wandb.login(key=api_key)
+    else:
+        # Try to get from environment
+        api_key = os.environ.get('WANDB_API_KEY')
+        if api_key:
+            wandb.login(key=api_key)
+        else:
+            print("⚠️  W&B API key not found!")
+            print("Please provide your API key:")
+            print("1. Set environment variable: os.environ['WANDB_API_KEY'] = 'your_key_here'")
+            print("2. Or call: setup_wandb_colab(api_key='your_key_here')")
+            print("3. Or use: wandb.login()")
+            raise ValueError("W&B API key required")
+
+
 if __name__ == '__main__':
     import argparse
     
@@ -426,8 +456,14 @@ if __name__ == '__main__':
                        help='Weights & Biases project name')
     parser.add_argument('--wandb-run-name', type=str, default=None,
                        help='Weights & Biases run name')
+    parser.add_argument('--wandb-key', type=str, default=None,
+                       help='Weights & Biases API key')
     
     args = parser.parse_args()
+    
+    # Setup W&B login if key provided
+    if args.wandb_key:
+        setup_wandb_colab(api_key=args.wandb_key)
     
     if args.train:
         # Train model
@@ -454,5 +490,5 @@ if __name__ == '__main__':
         print("  python train_ppo.py --train")
         print("  python train_ppo.py --train --timesteps 1000000")
         print("  python train_ppo.py --train --no-randomize")
-        print("  python train_ppo.py --train --wandb-project my-project --wandb-run-name experiment-1")
+        print("  python train_ppo.py --train --wandb-run-name experiment-1")
         print("  python train_ppo.py --test ./artifacts/models/ppo_gin_rummy/ppo_gin_rummy_final")
