@@ -31,18 +31,29 @@ from stable_baselines3.common.policies import ActorCriticPolicy
 from torch.distributions import Categorical
 
 
+import torch as th
+import torch.nn as nn
+from stable_baselines3.common.policies import ActorCriticPolicy
+from torch.distributions import Categorical
+
+
 class MaskedGinRummyPolicy(ActorCriticPolicy):
     """
     PPO-compatible masked MLP policy for PettingZoo Gin Rummy.
-    Handles dict observations with keys: 'observation' and 'action_mask'.
+    Works with dict observation: {'observation': ..., 'action_mask': ...}
     """
 
     def __init__(self, observation_space, action_space, lr_schedule, **kwargs):
-        super(MaskedGinRummyPolicy, self).__init__(observation_space, action_space, lr_schedule, **kwargs)
+        # Provide net_arch via kwargs so ActorCriticPolicy builds correctly.
+        # You can still override via policy_kwargs when creating the model.
+        kwargs.setdefault("net_arch", [dict(pi=[128, 128], vf=[128, 128])])
 
-        # Define MLP architecture for policy (pi) and value (vf)
-        self.net_arch = [dict(pi=[128, 128], vf=[128, 128])]
-        self._build(lr_schedule)  # build actor-critic network using SB3 helper
+        # Call parent constructor which will call _build internally.
+        super(MaskedGinRummyPolicy, self).__init__(
+            observation_space, action_space, lr_schedule, **kwargs
+        )
+
+        # NOTE: Do NOT call self._build(...) here. The base constructor handles building.
 
     # ---------------------------------------------------------
     # Custom masked distribution
@@ -51,11 +62,15 @@ class MaskedGinRummyPolicy(ActorCriticPolicy):
         logits = self.action_net(latent_pi)
 
         if action_mask is not None:
-            mask = action_mask.bool()
-            # Mask invalid actions by setting logits to -inf
-            logits = logits.masked_fill(~mask, th.finfo(th.float32).min)
+            # Ensure mask is boolean and same device/dtype as logits
+            mask = action_mask.to(dtype=th.bool, device=logits.device)
 
-        # SB3 will handle softmax normalization automatically
+            # Mask invalid actions by setting logits to a huge negative number
+            # Use a safe numeric min for the dtype
+            min_val = th.finfo(logits.dtype).min
+            logits = logits.masked_fill(~mask, min_val)
+
+        # Return the SB3 distribution (it will apply softmax internally)
         return self.action_dist.proba_distribution(logits=logits)
 
     # ---------------------------------------------------------
@@ -79,14 +94,15 @@ class MaskedGinRummyPolicy(ActorCriticPolicy):
     # Predict function (handles dict obs from Gin Rummy)
     # ---------------------------------------------------------
     def predict(self, observation, state=None, episode_start=None, deterministic=False):
-        if isinstance(observation, dict):
+        # Handle single observation dict e.g. {'observation': arr, 'action_mask': arr}
+        if isinstance(observation, dict) and "observation" in observation:
             obs_tensor = th.as_tensor(observation["observation"], device=self.device).float()
-            mask_tensor = th.as_tensor(observation["action_mask"], device=self.device).float()
+            mask_tensor = th.as_tensor(observation["action_mask"], device=self.device)
         else:
             obs_tensor = th.as_tensor(observation, device=self.device).float()
             mask_tensor = None
 
-        actions, _, _ = self.forward(obs_tensor, mask_tensor, deterministic)
+        actions, _, _ = self.forward(obs_tensor, action_mask=mask_tensor, deterministic=deterministic)
         return actions.cpu().numpy(), None
 
 
