@@ -4,6 +4,7 @@ from gymnasium import spaces
 from pettingzoo.classic import gin_rummy_v4
 from agents import Agent
 import random
+import torch
 
 
 class GinRummySB3Wrapper(gym.Env):
@@ -81,38 +82,51 @@ class GinRummySB3Wrapper(gym.Env):
             self.env.step(action)
     
     def step(self, action):
-        """Take a step in the environment."""
-        # Training agent takes action
+        """Take a step in the environment with PPO correction for invalid actions."""
         obs, reward, termination, truncation, info = self.env.last()
-        
-        # Check if action is valid
         if not termination and not truncation:
             mask = obs['action_mask']
-            if not mask[action]:
-                # Invalid action - give negative reward and sample valid action
-                reward = -1.0
-                valid_actions = np.where(mask)[0]
-                action = np.random.choice(valid_actions)
-        
+
+
+            ############
+            # Get probability distribution from PPO policy
+            obs_array = obs['observation']
+            obs_tensor = torch.as_tensor(obs_array).float().unsqueeze(0)
+
+            with torch.no_grad():
+                dist = self.agent.model.policy.get_distribution(obs_tensor)
+                policy_probs = dist.distribution.probs.cpu().numpy().squeeze()
+            ###########
+    
+            # Apply mask
+            masked_probs = policy_probs * mask
+            if masked_probs.sum() == 0:
+                # fallback if all invalid (rare)
+                masked_probs = mask / mask.sum()
+            else:
+                masked_probs /= masked_probs.sum()
+            
+            # Sample valid action
+            action = np.random.choice(len(masked_probs), p=masked_probs)
+
+        # Apply the (corrected) action
         self.env.step(action)
-        
-        # Check if game ended
+
+        # Check if episode ended
         if termination or truncation:
             next_obs, _, _, _, _ = self.env.last()
             return next_obs['observation'], reward, True, False, info
-        
-        # Opponent's turn(s) until it's training agent's turn again
+
+        # Handle opponent turns
         while True:
             agent = self.env.agent_selection
-            
+
             if agent == self.training_agent:
                 obs, reward, termination, truncation, info = self.env.last()
                 done = termination or truncation
                 return obs['observation'], reward, done, False, info
             else:
                 self._opponent_step()
-                
-                # Check if game ended during opponent's turn
                 _, _, termination, truncation, _ = self.env.last()
                 if termination or truncation:
                     obs, reward, _, _, info = self.env.last()
