@@ -37,46 +37,41 @@ from stable_baselines3.common.policies import ActorCriticPolicy
 from torch.distributions import Categorical
 
 
+import torch as th
+from stable_baselines3.common.policies import ActorCriticPolicy
+
+
 class MaskedGinRummyPolicy(ActorCriticPolicy):
     """
-    PPO-compatible masked MLP policy for PettingZoo Gin Rummy.
-    Works with dict observation: {'observation': ..., 'action_mask': ...}
+    SB3-compatible masked MLP policy for Gin Rummy (PettingZoo).
+    - Uses net_arch passed as a dict (SB3 >= v1.8.0).
+    - Calls proba_distribution positionally (compat with SB3 versions).
     """
 
     def __init__(self, observation_space, action_space, lr_schedule, **kwargs):
-        # Provide net_arch via kwargs so ActorCriticPolicy builds correctly.
-        # You can still override via policy_kwargs when creating the model.
-        kwargs.setdefault("net_arch", [dict(pi=[128, 128], vf=[128, 128])])
+        # Use dict form for net_arch to avoid SB3 warning
+        kwargs.setdefault("net_arch", dict(pi=[128, 128], vf=[128, 128]))
 
-        # Call parent constructor which will call _build internally.
-        super(MaskedGinRummyPolicy, self).__init__(
-            observation_space, action_space, lr_schedule, **kwargs
-        )
+        # Let the parent constructor handle building the network
+        super().__init__(observation_space, action_space, lr_schedule, **kwargs)
+        # Do NOT call self._build(...) manually
 
-        # NOTE: Do NOT call self._build(...) here. The base constructor handles building.
-
-    # ---------------------------------------------------------
-    # Custom masked distribution
-    # ---------------------------------------------------------
     def _get_action_dist_from_latent(self, latent_pi: th.Tensor, action_mask=None):
+        # Compute logits from the standard action_net
         logits = self.action_net(latent_pi)
 
         if action_mask is not None:
-            # Ensure mask is boolean and same device/dtype as logits
-            mask = action_mask.to(dtype=th.bool, device=logits.device)
-
-            # Mask invalid actions by setting logits to a huge negative number
-            # Use a safe numeric min for the dtype
+            # ensure mask on same device and bool type
+            mask = action_mask.to(device=logits.device).to(dtype=th.bool)
             min_val = th.finfo(logits.dtype).min
             logits = logits.masked_fill(~mask, min_val)
 
-        # Return the SB3 distribution (it will apply softmax internally)
-        return self.action_dist.proba_distribution(logits=logits)
+        # IMPORTANT: call proba_distribution *positionally* to be compatible
+        # with SB3 internals across versions.
+        return self.action_dist.proba_distribution(logits)
 
-    # ---------------------------------------------------------
-    # Forward pass for action selection (used by predict)
-    # ---------------------------------------------------------
     def forward(self, obs, action_mask=None, deterministic=False):
+        # obs is expected in the same form SB3 passes into the policy.
         features = self.extract_features(obs)
         latent_pi, latent_vf = self.mlp_extractor(features)
         distribution = self._get_action_dist_from_latent(latent_pi, action_mask)
@@ -90,11 +85,8 @@ class MaskedGinRummyPolicy(ActorCriticPolicy):
         log_prob = distribution.log_prob(actions)
         return actions, value, log_prob
 
-    # ---------------------------------------------------------
-    # Predict function (handles dict obs from Gin Rummy)
-    # ---------------------------------------------------------
+    # Optional: keep predict for single dict obs (useful for inference)
     def predict(self, observation, state=None, episode_start=None, deterministic=False):
-        # Handle single observation dict e.g. {'observation': arr, 'action_mask': arr}
         if isinstance(observation, dict) and "observation" in observation:
             obs_tensor = th.as_tensor(observation["observation"], device=self.device).float()
             mask_tensor = th.as_tensor(observation["action_mask"], device=self.device)
