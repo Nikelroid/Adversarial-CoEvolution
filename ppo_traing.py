@@ -1,101 +1,191 @@
 """
-Training script for PPO agent on Gin Rummy environment.
+Training script for PPO agent on Gin Rummy environment with action masking.
 
 Requirements:
-pip install stable-baselines3[extra] pettingzoo gymnasium
+pip install stable-baselines3[extra] pettingzoo gymnasium wandb
 
 Usage:
-python train_ppo.py
+python train_ppo.py --train
 """
 
 import os
+import numpy as np
+import torch as th
+import torch.nn as nn
+from torch.distributions import Categorical
 from stable_baselines3 import PPO
-from stable_baselines3.common.callbacks import CheckpointCallback, EvalCallback
+from stable_baselines3.common.callbacks import CheckpointCallback, EvalCallback, BaseCallback
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.vec_env import DummyVecEnv
-from agents.random_agent import RandomAgent
+from stable_baselines3.common.policies import ActorCriticPolicy
+from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
 import torch
+import wandb
 
-# Import the wrapper
+# Import your custom components
 from gym_wrapper import GinRummySB3Wrapper
-
-import torch as th
-import torch.nn as nn
-from torch.distributions import Categorical
-from stable_baselines3.common.policies import ActorCriticPolicy
-
-
-import torch as th
-import torch.nn as nn
-from stable_baselines3.common.policies import ActorCriticPolicy
-from torch.distributions import Categorical
-
-
-import torch as th
-import torch.nn as nn
-from stable_baselines3.common.policies import ActorCriticPolicy
-from torch.distributions import Categorical
-
-
-import torch as th
-from stable_baselines3.common.policies import ActorCriticPolicy
+from agents.random_agent import RandomAgent
 
 
 class MaskedGinRummyPolicy(ActorCriticPolicy):
     """
-    SB3-compatible masked MLP policy for Gin Rummy (PettingZoo).
-    - Uses net_arch passed as a dict (SB3 >= v1.8.0).
-    - Calls proba_distribution positionally (compat with SB3 versions).
+    PPO-compatible masked MLP policy for PettingZoo Gin Rummy.
+    Works with dict observation: {'observation': ..., 'action_mask': ...}
+    
+    FIXES:
+    - Properly extracts action masks from observations
+    - Overrides evaluate_actions() to apply masks during training
+    - Handles batched observations correctly
     """
 
     def __init__(self, observation_space, action_space, lr_schedule, **kwargs):
-        # Use dict form for net_arch to avoid SB3 warning
-        kwargs.setdefault("net_arch", dict(pi=[128, 128], vf=[128, 128]))
+        # Set default network architecture
+        kwargs.setdefault("net_arch", [dict(pi=[256, 256], vf=[256, 256])])
+        
+        super(MaskedGinRummyPolicy, self).__init__(
+            observation_space, action_space, lr_schedule, **kwargs
+        )
 
-        # Let the parent constructor handle building the network
-        super().__init__(observation_space, action_space, lr_schedule, **kwargs)
-        # Do NOT call self._build(...) manually
+    def _extract_obs_and_mask(self, obs):
+        """
+        Extract observation vector and action mask from dict observation.
+        Handles both single and batched observations.
+        """
+        if isinstance(obs, dict):
+            # Dict observation from environment
+            obs_tensor = obs['observation']
+            mask_tensor = obs.get('action_mask', None)
+        else:
+            # Already a tensor (SB3 might flatten dict obs)
+            obs_tensor = obs
+            mask_tensor = None
+        
+        # Ensure tensors are on correct device
+        if not isinstance(obs_tensor, th.Tensor):
+            obs_tensor = th.as_tensor(obs_tensor, device=self.device).float()
+        if mask_tensor is not None and not isinstance(mask_tensor, th.Tensor):
+            mask_tensor = th.as_tensor(mask_tensor, device=self.device)
+            
+        return obs_tensor, mask_tensor
 
-    def _get_action_dist_from_latent(self, latent_pi: th.Tensor, action_mask=None):
-        # Compute logits from the standard action_net
-        logits = self.action_net(latent_pi)
+    def _apply_action_mask(self, logits, action_mask):
+        """
+        Apply action mask to logits by setting invalid actions to -inf.
+        """
+        if action_mask is None:
+            return logits
+        
+        # Ensure mask is boolean tensor on same device
+        mask = action_mask.to(dtype=th.bool, device=logits.device)
+        
+        # Use -inf for invalid actions (safer than finfo.min)
+        logits = th.where(mask, logits, th.tensor(float('-inf'), device=logits.device, dtype=logits.dtype))
+        
+        return logits
 
-        if action_mask is not None:
-            # ensure mask on same device and bool type
-            mask = action_mask.to(device=logits.device).to(dtype=th.bool)
-            min_val = th.finfo(logits.dtype).min
-            logits = logits.masked_fill(~mask, min_val)
-
-        # IMPORTANT: call proba_distribution *positionally* to be compatible
-        # with SB3 internals across versions.
-        return self.action_dist.proba_distribution(logits)
-
-    def forward(self, obs, action_mask=None, deterministic=False):
-        # obs is expected in the same form SB3 passes into the policy.
-        features = self.extract_features(obs)
+    def forward(self, obs, deterministic=False):
+        """
+        Forward pass for action selection.
+        Returns actions, values, and log probabilities.
+        """
+        # Extract observation and mask
+        obs_tensor, action_mask = self._extract_obs_and_mask(obs)
+        
+        # Get features and latent vectors
+        features = self.extract_features(obs_tensor)
         latent_pi, latent_vf = self.mlp_extractor(features)
-        distribution = self._get_action_dist_from_latent(latent_pi, action_mask)
-        value = self.value_net(latent_vf)
-
+        
+        # Get action logits and apply mask
+        logits = self.action_net(latent_pi)
+        logits = self._apply_action_mask(logits, action_mask)
+        
+        # Create distribution
+        distribution = self.action_dist.proba_distribution(action_logits=logits)
+        
+        # Sample actions
         if deterministic:
-            actions = distribution.get_mode()
+            actions = th.argmax(logits, dim=-1)
         else:
             actions = distribution.sample()
-
+        
+        # Get log probabilities and values
         log_prob = distribution.log_prob(actions)
-        return actions, value, log_prob
+        values = self.value_net(latent_vf)
+        
+        return actions, values, log_prob
 
-    # Optional: keep predict for single dict obs (useful for inference)
+    def evaluate_actions(self, obs, actions):
+        """
+        CRITICAL: This method is called during PPO training to evaluate actions.
+        Must apply action masking here for training to work correctly.
+        """
+        # Extract observation and mask
+        obs_tensor, action_mask = self._extract_obs_and_mask(obs)
+        
+        # Get features and latent vectors
+        features = self.extract_features(obs_tensor)
+        latent_pi, latent_vf = self.mlp_extractor(features)
+        
+        # Get action logits and apply mask
+        logits = self.action_net(latent_pi)
+        logits = self._apply_action_mask(logits, action_mask)
+        
+        # Create distribution and evaluate
+        distribution = self.action_dist.proba_distribution(action_logits=logits)
+        log_prob = distribution.log_prob(actions)
+        entropy = distribution.entropy()
+        values = self.value_net(latent_vf)
+        
+        return values, log_prob, entropy
+
     def predict(self, observation, state=None, episode_start=None, deterministic=False):
-        if isinstance(observation, dict) and "observation" in observation:
-            obs_tensor = th.as_tensor(observation["observation"], device=self.device).float()
-            mask_tensor = th.as_tensor(observation["action_mask"], device=self.device)
+        """
+        Predict action from observation (used for inference).
+        Handles single observations from the environment.
+        """
+        # Convert to tensor if needed
+        if isinstance(observation, dict):
+            obs_tensor = th.as_tensor(observation["observation"], device=self.device).float().unsqueeze(0)
+            mask_tensor = th.as_tensor(observation["action_mask"], device=self.device).unsqueeze(0)
+            obs_dict = {'observation': obs_tensor, 'action_mask': mask_tensor}
         else:
-            obs_tensor = th.as_tensor(observation, device=self.device).float()
-            mask_tensor = None
+            obs_dict = th.as_tensor(observation, device=self.device).float().unsqueeze(0)
+        
+        with th.no_grad():
+            actions, _, _ = self.forward(obs_dict, deterministic=deterministic)
+        
+        return actions.cpu().numpy(), state
 
-        actions, _, _ = self.forward(obs_tensor, action_mask=mask_tensor, deterministic=deterministic)
-        return actions.cpu().numpy(), None
+
+class WandbCallback(BaseCallback):
+    """
+    Custom callback for logging to Weights & Biases.
+    """
+    def __init__(self, verbose=0):
+        super(WandbCallback, self).__init__(verbose)
+        self.episode_rewards = []
+        self.episode_lengths = []
+        
+    def _on_step(self) -> bool:
+        # Log episode data when episodes end
+        if len(self.model.ep_info_buffer) > 0:
+            for info in self.model.ep_info_buffer:
+                wandb.log({
+                    "train/episode_reward": info['r'],
+                    "train/episode_length": info['l'],
+                    "train/timesteps": self.num_timesteps,
+                })
+        
+        return True
+    
+    def _on_rollout_end(self) -> bool:
+        # Log training metrics after each rollout
+        if hasattr(self.model, 'logger') and self.model.logger is not None:
+            wandb.log({
+                "train/timesteps": self.num_timesteps,
+                "train/fps": self.model.logger.name_to_value.get("time/fps", 0),
+            })
+        return True
 
 
 def make_env():
@@ -112,24 +202,57 @@ def train_ppo(
     checkpoint_freq=50_000,
     eval_freq=10_000,
     n_eval_episodes=10,
-    randomize_position=True
+    randomize_position=True,
+    wandb_project="gin-rummy-ppo",
+    wandb_run_name=None,
+    wandb_config=None,
 ):
     """
-    Train a PPO agent on Gin Rummy.
+    Train a PPO agent on Gin Rummy with W&B logging.
     
     Args:
         total_timesteps: Total number of training steps
         save_path: Path to save the trained model
-        log_path: Path for tensorboard logs
+        log_path: Path for logs
         checkpoint_freq: Frequency (in timesteps) to save checkpoints
         eval_freq: Frequency to evaluate the model
         n_eval_episodes: Number of episodes for evaluation
         randomize_position: Whether to randomize training agent position each episode
+        wandb_project: W&B project name
+        wandb_run_name: W&B run name (optional)
+        wandb_config: Additional config dict for W&B (optional)
     """
     
     # Create directories
     os.makedirs(save_path, exist_ok=True)
     os.makedirs(log_path, exist_ok=True)
+    
+    # Initialize Weights & Biases
+    config = {
+        "algorithm": "PPO",
+        "policy": "MaskedGinRummyPolicy",
+        "total_timesteps": total_timesteps,
+        "learning_rate": 3e-4,
+        "n_steps": 2048,
+        "batch_size": 256,
+        "n_epochs": 10,
+        "gamma": 0.99,
+        "gae_lambda": 0.95,
+        "clip_range": 0.2,
+        "ent_coef": 0.01,
+        "randomize_position": randomize_position,
+    }
+    
+    if wandb_config:
+        config.update(wandb_config)
+    
+    wandb.init(
+        project=wandb_project,
+        name=wandb_run_name,
+        config=config,
+        sync_tensorboard=False,  # We're not using tensorboard
+        monitor_gym=True,
+    )
     
     # Create training environment
     print("Creating training environment...")
@@ -154,26 +277,34 @@ def train_ppo(
         eval_freq=eval_freq,
         n_eval_episodes=n_eval_episodes,
         deterministic=True,
-        render=False
+        render=False,
+        callback_on_new_best=lambda: wandb.log({"eval/new_best_model": 1})
     )
+    
+    wandb_callback = WandbCallback()
     
     # Create PPO model
     print("Initializing PPO model...")
+    device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    
     model = PPO(
         MaskedGinRummyPolicy,
         train_env,
         verbose=1,
-        learning_rate=3e-4,
-        n_steps=2048,
-        batch_size=256,
-        n_epochs=10,
-        gamma=0.99,
-        gae_lambda=0.95,
-        clip_range=0.2,
-        ent_coef=0.01,
-        tensorboard_log=log_path,
-        device='cuda' if torch.cuda.is_available() else 'cpu'
+        learning_rate=config["learning_rate"],
+        n_steps=config["n_steps"],
+        batch_size=config["batch_size"],
+        n_epochs=config["n_epochs"],
+        gamma=config["gamma"],
+        gae_lambda=config["gae_lambda"],
+        clip_range=config["clip_range"],
+        ent_coef=config["ent_coef"],
+        tensorboard_log=None,  # Disabled tensorboard
+        device=device
     )
+    
+    # Log model architecture to W&B
+    wandb.watch(model.policy, log="all", log_freq=1000)
     
     print(f"Training on device: {model.device}")
     print(f"Total timesteps: {total_timesteps:,}")
@@ -183,7 +314,7 @@ def train_ppo(
     try:
         model.learn(
             total_timesteps=total_timesteps,
-            callback=[checkpoint_callback, eval_callback],
+            callback=[checkpoint_callback, eval_callback, wandb_callback],
             progress_bar=True
         )
         
@@ -192,28 +323,37 @@ def train_ppo(
         model.save(final_path)
         print(f"\nTraining complete! Model saved to {final_path}")
         
+        # Log final model to W&B
+        wandb.save(final_path + ".zip")
+        
     except KeyboardInterrupt:
         print("\nTraining interrupted by user.")
         interrupted_path = os.path.join(save_path, 'ppo_gin_rummy_interrupted')
         model.save(interrupted_path)
         print(f"Model saved to {interrupted_path}")
+        wandb.save(interrupted_path + ".zip")
     
     finally:
         train_env.close()
         eval_env.close()
+        wandb.finish()
     
     return model
 
 
-def test_trained_model(model_path, num_episodes=10):
+def test_trained_model(model_path, num_episodes=10, log_to_wandb=False):
     """
     Test a trained model.
     
     Args:
         model_path: Path to the trained model
         num_episodes: Number of episodes to test
+        log_to_wandb: Whether to log results to W&B
     """
     print(f"\nTesting model: {model_path}")
+    
+    if log_to_wandb:
+        wandb.init(project="gin-rummy-ppo", name="model_test", job_type="evaluation")
     
     # Load model
     model = PPO.load(model_path)
@@ -242,15 +382,33 @@ def test_trained_model(model_path, num_episodes=10):
             wins += 1
         
         print(f"Episode {episode + 1}: Reward = {episode_reward:.2f}")
+        
+        if log_to_wandb:
+            wandb.log({
+                "test/episode_reward": episode_reward,
+                "test/episode": episode + 1,
+            })
     
     env.close()
     
+    avg_reward = sum(total_rewards) / len(total_rewards)
+    win_rate = wins / num_episodes * 100
+    
     print(f"\n=== Test Results ===")
     print(f"Episodes: {num_episodes}")
-    print(f"Average Reward: {sum(total_rewards) / len(total_rewards):.2f}")
-    print(f"Win Rate: {wins / num_episodes * 100:.1f}%")
+    print(f"Average Reward: {avg_reward:.2f}")
+    print(f"Win Rate: {win_rate:.1f}%")
     print(f"Max Reward: {max(total_rewards):.2f}")
     print(f"Min Reward: {min(total_rewards):.2f}")
+    
+    if log_to_wandb:
+        wandb.log({
+            "test/avg_reward": avg_reward,
+            "test/win_rate": win_rate,
+            "test/max_reward": max(total_rewards),
+            "test/min_reward": min(total_rewards),
+        })
+        wandb.finish()
 
 
 if __name__ == '__main__':
@@ -260,10 +418,14 @@ if __name__ == '__main__':
     parser.add_argument('--train', action='store_true', help='Train a new model')
     parser.add_argument('--test', type=str, help='Test a trained model (provide path)')
     parser.add_argument('--timesteps', type=int, default=500_000, help='Training timesteps')
-    parser.add_argument('--save-path', type=str, default='./models/ppo_gin_rummy', 
+    parser.add_argument('--save-path', type=str, default='./artifacts/models/ppo_gin_rummy', 
                        help='Path to save models')
     parser.add_argument('--no-randomize', action='store_true',
                        help='Disable position randomization during training')
+    parser.add_argument('--wandb-project', type=str, default='gin-rummy-ppo',
+                       help='Weights & Biases project name')
+    parser.add_argument('--wandb-run-name', type=str, default=None,
+                       help='Weights & Biases run name')
     
     args = parser.parse_args()
     
@@ -272,26 +434,25 @@ if __name__ == '__main__':
         train_ppo(
             total_timesteps=args.timesteps,
             save_path=args.save_path,
-            randomize_position=not args.no_randomize
+            randomize_position=not args.no_randomize,
+            wandb_project=args.wandb_project,
+            wandb_run_name=args.wandb_run_name,
         )
         
         # Test the trained model
         final_model = os.path.join(args.save_path, 'ppo_gin_rummy_final')
         if os.path.exists(final_model + '.zip'):
-            test_trained_model(final_model, num_episodes=10)
+            test_trained_model(final_model, num_episodes=10, log_to_wandb=True)
     
     elif args.test:
         # Test existing model
-        test_trained_model(args.test, num_episodes=20)
+        test_trained_model(args.test, num_episodes=20, log_to_wandb=True)
     
     else:
         print("Please specify --train or --test <model_path>")
         print("\nExamples:")
         print("  python train_ppo.py --train")
         print("  python train_ppo.py --train --timesteps 1000000")
-        print("  python train_ppo.py --train --no-randomize  # Train without position randomization")
-        print("  python train_ppo.py --test ./models/ppo_gin_rummy/ppo_gin_rummy_final")
-
-
-
-
+        print("  python train_ppo.py --train --no-randomize")
+        print("  python train_ppo.py --train --wandb-project my-project --wandb-run-name experiment-1")
+        print("  python train_ppo.py --test ./artifacts/models/ppo_gin_rummy/ppo_gin_rummy_final")
