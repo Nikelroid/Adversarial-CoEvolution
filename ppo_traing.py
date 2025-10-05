@@ -29,7 +29,7 @@ from agents.random_agent import RandomAgent
 # ============================================
 # W&B Configuration - Works on Colab & Local
 # ============================================
-WANDB_API_KEY = "41fe78a601dfc0909950ad6ec7e6c4fb042d032a"  # Replace with your actual API key
+WANDB_API_KEY = "ucedsuicniusnocindiojcod"  # Replace with your actual API key
 WANDB_PROJECT = "Adversarial-CoEvolution"
 
 # Login to W&B
@@ -197,6 +197,18 @@ class WandbCallback(BaseCallback):
         return True
 
 
+class WandbBestModelCallback(BaseCallback):
+    """
+    Callback to log when a new best model is found during evaluation.
+    """
+    def __init__(self, verbose=0):
+        super(WandbBestModelCallback, self).__init__(verbose)
+        
+    def _on_step(self) -> bool:
+        wandb.log({"eval/new_best_model": 1, "eval/timesteps": self.num_timesteps})
+        return True
+
+
 def make_env():
     """Create and wrap the environment."""
     env = GinRummySB3Wrapper(opponent_policy=RandomAgent, randomize_position=True)
@@ -285,7 +297,7 @@ def train_ppo(
         n_eval_episodes=n_eval_episodes,
         deterministic=True,
         render=False,
-        callback_on_new_best=lambda: wandb.log({"eval/new_best_model": 1})
+        callback_on_new_best=WandbBestModelCallback()
     )
     
     wandb_callback = WandbCallback()
