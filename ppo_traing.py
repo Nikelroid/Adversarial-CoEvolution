@@ -13,6 +13,7 @@ from stable_baselines3 import PPO
 from stable_baselines3.common.callbacks import CheckpointCallback, EvalCallback
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.vec_env import DummyVecEnv
+from agents.random_agent import RandomAgent
 import torch
 
 # Import the wrapper
@@ -21,14 +22,14 @@ from gym_wrapper import GinRummySB3Wrapper
 
 def make_env():
     """Create and wrap the environment."""
-    env = GinRummySB3Wrapper(opponent_policy='random', randomize_position=True)
+    env = GinRummySB3Wrapper(opponent_policy=RandomAgent, randomize_position=True)
     env = Monitor(env)
     return env
 
 
 def train_ppo(
     total_timesteps=500_000,
-    save_path='./models/ppo_gin_rummy',
+    save_path='./artifacts/models/ppo_gin_rummy',
     log_path='./logs/',
     checkpoint_freq=50_000,
     eval_freq=10_000,
@@ -86,7 +87,7 @@ def train_ppo(
         verbose=1,
         learning_rate=3e-4,
         n_steps=2048,
-        batch_size=64,
+        batch_size=256,
         n_epochs=10,
         gamma=0.99,
         gae_lambda=0.95,
