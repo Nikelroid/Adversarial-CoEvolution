@@ -82,7 +82,7 @@ def train_ppo(
     # Create PPO model
     print("Initializing PPO model...")
     model = PPO(
-        'MlpPolicy',
+        MaskedMLPPolicy,
         train_env,
         verbose=1,
         learning_rate=3e-4,
@@ -213,3 +213,71 @@ if __name__ == '__main__':
         print("  python train_ppo.py --train --timesteps 1000000")
         print("  python train_ppo.py --train --no-randomize  # Train without position randomization")
         print("  python train_ppo.py --test ./models/ppo_gin_rummy/ppo_gin_rummy_final")
+
+
+
+
+import torch as th
+import torch.nn as nn
+from torch.distributions import Categorical
+from stable_baselines3.common.policies import ActorCriticPolicy
+
+
+class MaskedMLPPolicy(ActorCriticPolicy):
+    """
+    Custom PPO policy with MLP architecture and action masking.
+    Works with discrete action spaces.
+    """
+
+    def __init__(self, observation_space, action_space, lr_schedule, **kwargs):
+        super(MaskedMLPPolicy, self).__init__(observation_space, action_space, lr_schedule, **kwargs)
+
+        # You can adjust hidden layers here if needed
+        self.net_arch = [dict(pi=[128, 128], vf=[128, 128])]
+        self._build(lr_schedule)
+
+    def _get_action_dist_from_latent(self, latent_pi: th.Tensor, action_mask=None):
+        """
+        Override distribution creation to apply masking to logits.
+        """
+        logits = self.action_net(latent_pi)
+
+        if action_mask is not None:
+            # Convert mask to bool tensor
+            mask = action_mask.bool()
+            # Assign -inf to invalid actions
+            logits = logits.masked_fill(~mask, -1e9)
+
+        # Return a categorical distribution with masked logits
+        return self.action_dist.proba_distribution(logits=logits)
+
+    def forward(self, obs: th.Tensor, action_mask=None, deterministic=False):
+        """
+        Forward pass for action selection (with optional mask).
+        """
+        features = self.extract_features(obs)
+        latent_pi, latent_vf = self.mlp_extractor(features)
+        distribution = self._get_action_dist_from_latent(latent_pi, action_mask)
+        value = self.value_net(latent_vf)
+
+        if deterministic:
+            actions = distribution.get_mode()
+        else:
+            actions = distribution.sample()
+
+        log_prob = distribution.log_prob(actions)
+        return actions, value, log_prob
+
+    def predict(self, obs, state=None, episode_start=None, deterministic=False):
+        """
+        Override predict() to handle dict observations (e.g. with masks).
+        """
+        if isinstance(obs, dict) and "observation" in obs and "action_mask" in obs:
+            obs_tensor = th.as_tensor(obs["observation"], device=self.device).float()
+            mask_tensor = th.as_tensor(obs["action_mask"], device=self.device).float()
+        else:
+            obs_tensor = th.as_tensor(obs, device=self.device).float()
+            mask_tensor = None
+
+        actions, _, _ = self.forward(obs_tensor, action_mask=mask_tensor, deterministic=deterministic)
+        return actions.cpu().numpy(), None
