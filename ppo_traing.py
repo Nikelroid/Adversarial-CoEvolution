@@ -25,38 +25,43 @@ from torch.distributions import Categorical
 from stable_baselines3.common.policies import ActorCriticPolicy
 
 
-class MaskedMLPPolicy(ActorCriticPolicy):
+import torch as th
+import torch.nn as nn
+from stable_baselines3.common.policies import ActorCriticPolicy
+from torch.distributions import Categorical
+
+
+class MaskedGinRummyPolicy(ActorCriticPolicy):
     """
-    Custom PPO policy with MLP architecture and action masking.
-    Works with discrete action spaces.
+    PPO-compatible masked MLP policy for PettingZoo Gin Rummy.
+    Handles dict observations with keys: 'observation' and 'action_mask'.
     """
 
     def __init__(self, observation_space, action_space, lr_schedule, **kwargs):
-        super(MaskedMLPPolicy, self).__init__(observation_space, action_space, lr_schedule, **kwargs)
+        super(MaskedGinRummyPolicy, self).__init__(observation_space, action_space, lr_schedule, **kwargs)
 
-        # You can adjust hidden layers here if needed
+        # Define MLP architecture for policy (pi) and value (vf)
         self.net_arch = [dict(pi=[128, 128], vf=[128, 128])]
-        self._build(lr_schedule)
+        self._build(lr_schedule)  # build actor-critic network using SB3 helper
 
+    # ---------------------------------------------------------
+    # Custom masked distribution
+    # ---------------------------------------------------------
     def _get_action_dist_from_latent(self, latent_pi: th.Tensor, action_mask=None):
-        """
-        Override distribution creation to apply masking to logits.
-        """
         logits = self.action_net(latent_pi)
 
         if action_mask is not None:
-            # Convert mask to bool tensor
             mask = action_mask.bool()
-            # Assign -inf to invalid actions
-            logits = logits.masked_fill(~mask, -1e9)
+            # Mask invalid actions by setting logits to -inf
+            logits = logits.masked_fill(~mask, th.finfo(th.float32).min)
 
-        # Return a categorical distribution with masked logits
+        # SB3 will handle softmax normalization automatically
         return self.action_dist.proba_distribution(logits=logits)
 
-    def forward(self, obs: th.Tensor, action_mask=None, deterministic=False):
-        """
-        Forward pass for action selection (with optional mask).
-        """
+    # ---------------------------------------------------------
+    # Forward pass for action selection (used by predict)
+    # ---------------------------------------------------------
+    def forward(self, obs, action_mask=None, deterministic=False):
         features = self.extract_features(obs)
         latent_pi, latent_vf = self.mlp_extractor(features)
         distribution = self._get_action_dist_from_latent(latent_pi, action_mask)
@@ -70,18 +75,18 @@ class MaskedMLPPolicy(ActorCriticPolicy):
         log_prob = distribution.log_prob(actions)
         return actions, value, log_prob
 
-    def predict(self, obs, state=None, episode_start=None, deterministic=False):
-        """
-        Override predict() to handle dict observations (e.g. with masks).
-        """
-        if isinstance(obs, dict) and "observation" in obs and "action_mask" in obs:
-            obs_tensor = th.as_tensor(obs["observation"], device=self.device).float()
-            mask_tensor = th.as_tensor(obs["action_mask"], device=self.device).float()
+    # ---------------------------------------------------------
+    # Predict function (handles dict obs from Gin Rummy)
+    # ---------------------------------------------------------
+    def predict(self, observation, state=None, episode_start=None, deterministic=False):
+        if isinstance(observation, dict):
+            obs_tensor = th.as_tensor(observation["observation"], device=self.device).float()
+            mask_tensor = th.as_tensor(observation["action_mask"], device=self.device).float()
         else:
-            obs_tensor = th.as_tensor(obs, device=self.device).float()
+            obs_tensor = th.as_tensor(observation, device=self.device).float()
             mask_tensor = None
 
-        actions, _, _ = self.forward(obs_tensor, action_mask=mask_tensor, deterministic=deterministic)
+        actions, _, _ = self.forward(obs_tensor, mask_tensor, deterministic)
         return actions.cpu().numpy(), None
 
 
@@ -147,7 +152,7 @@ def train_ppo(
     # Create PPO model
     print("Initializing PPO model...")
     model = PPO(
-        MaskedMLPPolicy,
+        MaskedGinRummyPolicy,
         train_env,
         verbose=1,
         learning_rate=3e-4,
