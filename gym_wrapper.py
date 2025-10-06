@@ -89,6 +89,7 @@ class GinRummySB3Wrapper(gym.Env):
         if not termination and not truncation:
             mask = obs['action_mask']
             if not mask[action]:
+                print('OK')
                 # Invalid action - give negative reward and sample valid action
                 reward = -10.0
                 valid_actions = np.where(mask)[0]
