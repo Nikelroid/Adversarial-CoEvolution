@@ -324,6 +324,7 @@ def train_ppo(
         tensorboard_log=None,  # Disabled tensorboard
         device=device
     )
+    print ('____________MODEL CREATED SUCCESSFULLY______________')
     
     # Log model architecture to W&B
     wandb.watch(model.policy, log="all", log_freq=1000)
