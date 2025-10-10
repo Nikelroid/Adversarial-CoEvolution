@@ -90,7 +90,7 @@ class GinRummySB3Wrapper(gym.Env):
             if not mask[action]:
                 print ('__________INVALID COMMAND________________')
                 # Invalid action - give negative reward and sample valid action
-                reward = -10.0
+                reward = -1.0
                 valid_actions = np.where(mask)[0]
                 action = np.random.choice(valid_actions)
         
