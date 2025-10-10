@@ -18,7 +18,7 @@ from stable_baselines3.common.callbacks import CheckpointCallback, EvalCallback,
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.vec_env import DummyVecEnv
 from stable_baselines3.common.policies import ActorCriticPolicy
-from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
+from stable_baselines3.common.torch_layers import CombinedExtractor
 import torch
 import wandb
 
@@ -102,7 +102,7 @@ class MaskedGinRummyPolicy(ActorCriticPolicy):
         _, action_mask = self._extract_obs_and_mask(obs)
         
         # Get features and latent vectors
-        features = self.extract_features(obs)
+        features = self.extract_features(obs, features_extractor=CombinedExtractor)
         latent_pi, latent_vf = self.mlp_extractor(features)
         
         # Get action logits and apply mask
@@ -134,7 +134,7 @@ class MaskedGinRummyPolicy(ActorCriticPolicy):
         
         # obs_tensor = torch.flatten(obs)
         # Get features and latent vectors
-        features = self.extract_features(obs)
+        features = self.extract_features(obs, features_extractor=CombinedExtractor)
         latent_pi, latent_vf = self.mlp_extractor(features)
         
         # Get action logits and apply mask
