@@ -84,14 +84,11 @@ class GinRummySB3Wrapper(gym.Env):
         """Take a step in the environment."""
         # Training agent takes action
         obs, reward, termination, truncation, info = self.env.last()
-        print ('__________________________')
-        print (f'Original -> {reward}')
-        reward = 0 if reward < 0 else reward
-        print (f'Changed -> {reward}')
         # Check if action is valid
         if not termination and not truncation:
             mask = obs['action_mask']
             if not mask[action]:
+                print ('__________INVALID COMMAND________________')
                 # Invalid action - give negative reward and sample valid action
                 reward = -10.0
                 valid_actions = np.where(mask)[0]
