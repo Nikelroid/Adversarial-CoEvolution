@@ -21,6 +21,8 @@ from stable_baselines3.common.policies import ActorCriticPolicy
 from stable_baselines3.common.torch_layers import CombinedExtractor
 import torch
 import wandb
+from gymnasium import spaces
+
 
 # Import your custom components
 from gym_wrapper import GinRummySB3Wrapper
@@ -99,10 +101,22 @@ class MaskedGinRummyPolicy(ActorCriticPolicy):
         """
         # Extract observation and mask
         print (obs.keys())
-        _, action_mask = self._extract_obs_and_mask(obs)
+        observation, action_mask = self._extract_obs_and_mask(obs)
         
         # Get features and latent vectors
-        features = self.extract_features(obs, features_extractor=CombinedExtractor)
+        obs_shape = observation.shape
+        action_mask_shape = action_mask.shape
+        
+        observation_space = spaces.Dict({
+            'observation': spaces.Box(
+                low=0, high=1, shape=obs_shape, dtype=np.float32
+            ),
+            'action_mask': spaces.Box(
+                low=0, high=1, shape=action_mask_shape, dtype=np.int8
+            )
+        })
+        features = self.extract_features(obs, features_extractor=CombinedExtractor(observation_space))
+
         latent_pi, latent_vf = self.mlp_extractor(features)
         
         # Get action logits and apply mask
@@ -130,11 +144,21 @@ class MaskedGinRummyPolicy(ActorCriticPolicy):
         Must apply action masking here for training to work correctly.
         """
         # Extract observation and mask
-        _, action_mask = self._extract_obs_and_mask(obs)
+        observation, action_mask = self._extract_obs_and_mask(obs)
         
-        # obs_tensor = torch.flatten(obs)
         # Get features and latent vectors
-        features = self.extract_features(obs, features_extractor=CombinedExtractor)
+        obs_shape = observation.shape
+        action_mask_shape = action_mask.shape
+        
+        observation_space = spaces.Dict({
+            'observation': spaces.Box(
+                low=0, high=1, shape=obs_shape, dtype=np.float32
+            ),
+            'action_mask': spaces.Box(
+                low=0, high=1, shape=action_mask_shape, dtype=np.int8
+            )
+        })
+        features = self.extract_features(obs, features_extractor=CombinedExtractor(observation_space))
         latent_pi, latent_vf = self.mlp_extractor(features)
         
         # Get action logits and apply mask
