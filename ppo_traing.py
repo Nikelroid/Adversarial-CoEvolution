@@ -99,12 +99,11 @@ class MaskedGinRummyPolicy(ActorCriticPolicy):
         """
         # Extract observation and mask
         print (obs.keys())
-        obs_tensor, action_mask = self._extract_obs_and_mask(obs)
+        _, action_mask = self._extract_obs_and_mask(obs)
         
-        obs_tensor = torch.flatten(obs_tensor)
         # Get features and latent vectors
-        # features = self.extract_features(obs_tensor)
-        latent_pi, latent_vf = self.mlp_extractor(obs_tensor)
+        features = self.extract_features(obs)
+        latent_pi, latent_vf = self.mlp_extractor(features)
         
         # Get action logits and apply mask
         logits = self.action_net(latent_pi)
@@ -131,12 +130,12 @@ class MaskedGinRummyPolicy(ActorCriticPolicy):
         Must apply action masking here for training to work correctly.
         """
         # Extract observation and mask
-        obs_tensor, action_mask = self._extract_obs_and_mask(obs)
+        _, action_mask = self._extract_obs_and_mask(obs)
         
-        obs_tensor = torch.flatten(obs_tensor)
+        # obs_tensor = torch.flatten(obs)
         # Get features and latent vectors
-        #features = self.extract_features(obs_tensor)
-        latent_pi, latent_vf = self.mlp_extractor(obs_tensor)
+        features = self.extract_features(obs)
+        latent_pi, latent_vf = self.mlp_extractor(features)
         
         # Get action logits and apply mask
         logits = self.action_net(latent_pi)
