@@ -98,13 +98,13 @@ class MaskedGinRummyPolicy(ActorCriticPolicy):
         Returns actions, values, and log probabilities.
         """
         # Extract observation and mask
-        print ('action_mask' in obs.keys())
+        print (obs.keys())
         obs_tensor, action_mask = self._extract_obs_and_mask(obs)
         
         
         # Get features and latent vectors
-        features = self.extract_features(obs_tensor)
-        latent_pi, latent_vf = self.mlp_extractor(features)
+        # features = self.extract_features(obs_tensor)
+        latent_pi, latent_vf = self.mlp_extractor(obs_tensor)
         
         # Get action logits and apply mask
         logits = self.action_net(latent_pi)
