@@ -27,9 +27,16 @@ class GinRummySB3Wrapper(gym.Env):
         
         # Define observation and action spaces
         obs_shape = sample_obs['observation'].shape
-        self.observation_space = spaces.Box(
-            low=0, high=1, shape=obs_shape, dtype=np.float32
-        )
+        action_mask_shape = sample_obs['action_mask'].shape
+        
+        self.observation_space = spaces.Dict({
+            'observation': spaces.Box(
+                low=0, high=1, shape=obs_shape, dtype=np.float32
+            ),
+            'action_mask': spaces.Box(
+                low=0, high=1, shape=action_mask_shape, dtype=np.int8
+            )
+        })
         
         # Action space is discrete (number of possible actions)
         action_space_size = self.env.action_space(agent).n
