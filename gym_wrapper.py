@@ -65,7 +65,7 @@ class GinRummySB3Wrapper(gym.Env):
             agent = self.env.agent_selection
             if agent == self.training_agent:
                 obs, _, _, _, _ = self.env.last()
-                return obs['observation'], {}
+                return obs, {}
             else:
                 # Opponent plays
                 self._opponent_step()
@@ -99,7 +99,7 @@ class GinRummySB3Wrapper(gym.Env):
         # Check if game ended
         if termination or truncation:
             next_obs, _, _, _, _ = self.env.last()
-            return next_obs['observation'], reward, True, False, info
+            return next_obs, reward, True, False, info
         
         # Opponent's turn(s) until it's training agent's turn again
         while True:
@@ -108,7 +108,7 @@ class GinRummySB3Wrapper(gym.Env):
             if agent == self.training_agent:
                 obs, reward, termination, truncation, info = self.env.last()
                 done = termination or truncation
-                return obs['observation'], reward, done, False, info
+                return obs, reward, done, False, info
             else:
                 self._opponent_step()
                 
@@ -116,7 +116,7 @@ class GinRummySB3Wrapper(gym.Env):
                 _, _, termination, truncation, _ = self.env.last()
                 if termination or truncation:
                     obs, reward, _, _, info = self.env.last()
-                    return obs['observation'], reward, True, False, info
+                    return obs, reward, True, False, info
     
     def render(self, mode='human'):
         """Render the environment."""
