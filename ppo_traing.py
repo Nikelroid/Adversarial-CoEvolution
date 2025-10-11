@@ -95,31 +95,31 @@ class MaskedGinRummyPolicy(ActorCriticPolicy):
         
         return logits
     
-    def extract_features(  # type: ignore[override]
-        self, obs: PyTorchObs, features_extractor: Optional[BaseFeaturesExtractor] = None
-        ) -> Union[th.Tensor, tuple[th.Tensor, th.Tensor]]:
-        """
-        Flatten all tensors in the observation dictionary and concatenate them.
+    # def extract_features(  # type: ignore[override]
+    #     self, obs: PyTorchObs, features_extractor: Optional[BaseFeaturesExtractor] = None
+    #     ) -> Union[th.Tensor, tuple[th.Tensor, th.Tensor]]:
+    #     """
+    #     Flatten all tensors in the observation dictionary and concatenate them.
         
-        Args:
-            obs: Dictionary of tensors
+    #     Args:
+    #         obs: Dictionary of tensors
             
-        Returns:
-            Flattened tensor of shape (batch_size, total_features)
-        """
-        # Collect all tensors and flatten each one
-        flattened_tensors = []
+    #     Returns:
+    #         Flattened tensor of shape (batch_size, total_features)
+    #     """
+    #     # Collect all tensors and flatten each one
+    #     flattened_tensors = []
         
-        for key in sorted(obs.keys()):  # Sort keys for consistent ordering
-            tensor = obs[key]
-            # Flatten all dimensions except the batch dimension (first dimension)
-            flattened = tensor.flatten(start_dim=1)
-            flattened_tensors.append(flattened)
+    #     for key in sorted(obs.keys()):  # Sort keys for consistent ordering
+    #         tensor = obs[key]
+    #         # Flatten all dimensions except the batch dimension (first dimension)
+    #         flattened = tensor.flatten(start_dim=1)
+    #         flattened_tensors.append(flattened)
         
-        # Concatenate all flattened tensors along the feature dimension
-        flatted_obs = torch.cat(flattened_tensors, dim=1)
+    #     # Concatenate all flattened tensors along the feature dimension
+    #     flatted_obs = torch.cat(flattened_tensors, dim=1)
         
-        return flatted_obs
+    #     return flatted_obs
 
     def forward(self, obs, deterministic=False):
         """
@@ -353,7 +353,8 @@ def train_ppo(
         clip_range=config["clip_range"],
         ent_coef=config["ent_coef"],
         tensorboard_log=None,  # Disabled tensorboard
-        device=device
+        device=device,
+        policy_kwargs={'features_extractor_class': CombinedExtractor}
     )
     print ('____________MODEL CREATED SUCCESSFULLY______________')
     
