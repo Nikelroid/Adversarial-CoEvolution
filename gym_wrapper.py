@@ -142,6 +142,7 @@ class GinRummySB3Wrapper(gym.Env):
                         hand_score = score_gin_rummy_hand(player_hand)
                     print(f'Score for this hand: {hand_score}')
                     print('#################')
+                    reward += (self.starting_score - hand_score)
                     return obs, reward, True, False, info
     
     def render(self, mode='human'):
