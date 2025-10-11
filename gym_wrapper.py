@@ -17,7 +17,7 @@ class GinRummySB3Wrapper(gym.Env):
     def __init__(self, opponent_policy, randomize_position=True):
         super().__init__()
         
-        self.env = gin_rummy_v4.env(render_mode=None,knock_reward = 2, gin_reward = 5, opponents_hand_visible = False)
+        self.env = gin_rummy_v4.env(render_mode=None,knock_reward = 5, gin_reward = 10, opponents_hand_visible = False)
         self.opponent_policy: Agent = opponent_policy(self.env)
         self.randomize_position = randomize_position
         
@@ -93,8 +93,6 @@ class GinRummySB3Wrapper(gym.Env):
         # Training agent takes action
         obs, reward, termination, truncation, info = self.env.last()
 
-
-
         player_hand = obs['observation'][0]
 
         if sum(player_hand) == 10:           
@@ -114,7 +112,7 @@ class GinRummySB3Wrapper(gym.Env):
         
         self.env.step(action)
 
-        if self.turn_num > 3:
+        if self.turn_num > 1:
             truncation = True
         self.turn_num += 1
         
