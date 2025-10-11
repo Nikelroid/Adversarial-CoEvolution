@@ -50,14 +50,6 @@ class MaskedGinRummyPolicy(ActorCriticPolicy):
     - Handles batched observations correctly
     """
 
-    def __init__(self, observation_space, action_space, lr_schedule, **kwargs):
-        # Set default network architecture
-        kwargs.setdefault("net_arch", [dict(pi=[256, 256], vf=[256, 256])])
-        
-        super(MaskedGinRummyPolicy, self).__init__(
-            observation_space, action_space, lr_schedule, **kwargs
-        )
-
     def _extract_obs_and_mask(self, obs):
         """
         Extract observation vector and action mask from dict observation.
@@ -94,106 +86,31 @@ class MaskedGinRummyPolicy(ActorCriticPolicy):
         logits = th.where(mask, logits, th.tensor(float('-inf'), device=logits.device, dtype=logits.dtype))
         
         return logits
-    
-    # def extract_features(  # type: ignore[override]
-    #     self, obs: PyTorchObs, features_extractor: Optional[BaseFeaturesExtractor] = None
-    #     ) -> Union[th.Tensor, tuple[th.Tensor, th.Tensor]]:
-    #     """
-    #     Flatten all tensors in the observation dictionary and concatenate them.
-        
-    #     Args:
-    #         obs: Dictionary of tensors
-            
-    #     Returns:
-    #         Flattened tensor of shape (batch_size, total_features)
-    #     """
-    #     # Collect all tensors and flatten each one
-    #     flattened_tensors = []
-        
-    #     for key in sorted(obs.keys()):  # Sort keys for consistent ordering
-    #         tensor = obs[key]
-    #         # Flatten all dimensions except the batch dimension (first dimension)
-    #         flattened = tensor.flatten(start_dim=1)
-    #         flattened_tensors.append(flattened)
-        
-    #     # Concatenate all flattened tensors along the feature dimension
-    #     flatted_obs = torch.cat(flattened_tensors, dim=1)
-        
-    #     return flatted_obs
 
-    def forward(self, obs, deterministic=False):
+    def forward(self, obs: th.Tensor, deterministic: bool = False) -> tuple[th.Tensor, th.Tensor, th.Tensor]:
         """
-        Forward pass for action selection.
-        Returns actions, values, and log probabilities.
+        Forward pass in all the networks (actor and critic)
+
+        :param obs: Observation
+        :param deterministic: Whether to sample or use deterministic actions
+        :return: action, value and log probability of the action
         """
-        # Extract observation and mask
-        _, action_mask = self._extract_obs_and_mask(obs)
-        
-        # Get features and latent vectors
+        # Preprocess the observation if needed
         features = self.extract_features(obs)
-        latent_pi, latent_vf = self.mlp_extractor(features)
-        
-        # Get action logits and apply mask
-        logits = self.action_net(latent_pi)
-        logits = self._apply_action_mask(logits, action_mask)
-        
-        # Create distribution
-        distribution = self.action_dist.proba_distribution(action_logits=logits)
-        print(logits.shape)
-        # Sample actions
-        if deterministic:
-            actions = distribution.mode()
+        if self.share_features_extractor:
+            latent_pi, latent_vf = self.mlp_extractor(features)
         else:
-            actions = distribution.sample()
-        
-        # Get log probabilities and values
-        log_prob = distribution.log_prob(actions)
+            pi_features, vf_features = features
+            latent_pi = self.mlp_extractor.forward_actor(pi_features)
+            latent_pi = self._apply_action_mask(latent_pi, obs['action_mask'])
+            latent_vf = self.mlp_extractor.forward_critic(vf_features)
+        # Evaluate the values for the given observations
         values = self.value_net(latent_vf)
-        
+        distribution = self._get_action_dist_from_latent(latent_pi)
+        actions = distribution.get_actions(deterministic=deterministic)
+        log_prob = distribution.log_prob(actions)
+        actions = actions.reshape((-1, *self.action_space.shape))  # type: ignore[misc]
         return actions, values, log_prob
-
-    def evaluate_actions(self, obs, actions):
-        """
-        CRITICAL: This method is called during PPO training to evaluate actions.
-        Must apply action masking here for training to work correctly.
-        """
-        # Extract observation and mask
-        _, action_mask = self._extract_obs_and_mask(obs)
-        
-        # obs_tensor = torch.flatten(obs)
-        # Get features and latent vectors
-        features = self.extract_features(obs)
-        latent_pi, latent_vf = self.mlp_extractor(features)
-        
-        # Get action logits and apply mask
-        logits = self.action_net(latent_pi)
-        logits = self._apply_action_mask(logits, action_mask)
-        
-        # Create distribution and evaluate
-        distribution = self.action_dist.proba_distribution(action_logits=logits)
-        log_prob = distribution.log_prob(actions)
-        entropy = distribution.entropy()
-        values = self.value_net(latent_vf)
-        
-        return values, log_prob, entropy
-
-    def predict(self, observation, state=None, episode_start=None, deterministic=False):
-        """
-        Predict action from observation (used for inference).
-        Handles single observations from the environment.
-        """
-        # Convert to tensor if needed
-        if isinstance(observation, dict):
-            obs_tensor = th.as_tensor(observation["observation"], device=self.device).float().unsqueeze(0)
-            mask_tensor = th.as_tensor(observation["action_mask"], device=self.device).unsqueeze(0)
-            obs_dict = {'observation': obs_tensor, 'action_mask': mask_tensor}
-        else:
-            obs_dict = th.as_tensor(observation, device=self.device).float().unsqueeze(0)
-        
-        with th.no_grad():
-            actions, _, _ = self.forward(obs_dict, deterministic=deterministic)
-        
-        return actions.cpu().numpy(), state
 
 
 class WandbCallback(BaseCallback):
