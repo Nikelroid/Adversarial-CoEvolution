@@ -92,9 +92,7 @@ class GinRummySB3Wrapper(gym.Env):
         """Take a step in the environment."""
         # Training agent takes action
         obs, reward, termination, truncation, info = self.env.last()
-        if self.turn_num > 3:
-            truncation = True
-        self.turn_num += 1
+
 
 
         player_hand = obs['observation'][0]
@@ -115,7 +113,12 @@ class GinRummySB3Wrapper(gym.Env):
                 action = np.random.choice(valid_actions)
         
         self.env.step(action)
+
+        if self.turn_num > 3:
+            truncation = True
+        self.turn_num += 1
         
+
         # Check if game ended
         if termination or truncation:
             next_obs, _, _, _, _ = self.env.last()
