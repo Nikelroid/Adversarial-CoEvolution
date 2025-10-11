@@ -37,7 +37,7 @@ class GinRummySB3Wrapper(gym.Env):
                 low=0, high=1, shape=action_mask_shape, dtype=np.int8
             )
         })
-        
+
         # Action space is discrete (number of possible actions)
         action_space_size = self.env.action_space(agent).n
         self.action_space = spaces.Discrete(action_space_size)
@@ -91,11 +91,12 @@ class GinRummySB3Wrapper(gym.Env):
         """Take a step in the environment."""
         # Training agent takes action
         obs, reward, termination, truncation, info = self.env.last()
+        print (obs['observations'])
         # Check if action is valid
         if not termination and not truncation:
             mask = obs['action_mask']
             if not mask[action]:
-                print ('__________INVALID COMMAND________________')
+                
                 # Invalid action - give negative reward and sample valid action
                 reward = -1.0
                 valid_actions = np.where(mask)[0]
