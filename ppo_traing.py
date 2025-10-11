@@ -142,7 +142,7 @@ class MaskedGinRummyPolicy(ActorCriticPolicy):
         print(logits.shape)
         # Sample actions
         if deterministic:
-            actions = th.argmax(logits, dim=-1)
+            actions = distribution.mode()
         else:
             actions = distribution.sample()
         
