@@ -284,10 +284,10 @@ def train_ppo(
         "policy": "MaskedGinRummyPolicy",
         "total_timesteps": total_timesteps,
         "learning_rate": 3e-4,
-        "n_steps": 1024,          # Reduced
-        "batch_size": 512,        # Increased
+        "n_steps": 512,          # Reduced
+        "batch_size": 256,        # Increased
         "n_epochs": 5,            # Reduced slightly
-        "gamma": 0.99,
+        "gamma": 1,
         "gae_lambda": 0.95,
         "clip_range": 0.2,
         "ent_coef": 0.03,         # Increased for exploration
