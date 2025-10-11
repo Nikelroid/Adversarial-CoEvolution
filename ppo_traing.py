@@ -139,7 +139,7 @@ class MaskedGinRummyPolicy(ActorCriticPolicy):
         
         # Create distribution
         distribution = self.action_dist.proba_distribution(action_logits=logits)
-        
+        print(logits.shape)
         # Sample actions
         if deterministic:
             actions = th.argmax(logits, dim=-1)
