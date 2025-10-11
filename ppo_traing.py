@@ -21,6 +21,9 @@ from stable_baselines3.common.policies import ActorCriticPolicy
 from stable_baselines3.common.torch_layers import CombinedExtractor
 import torch
 import wandb
+from typing import Union,Optional
+from stable_baselines3.common.type_aliases import PyTorchObs
+from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
 
 # Import your custom components
 from gym_wrapper import GinRummySB3Wrapper
@@ -92,7 +95,9 @@ class MaskedGinRummyPolicy(ActorCriticPolicy):
         
         return logits
     
-    def _custom_dict_flatten(self, obs):
+    def extract_features(  # type: ignore[override]
+        self, obs: PyTorchObs, features_extractor: Optional[BaseFeaturesExtractor] = None
+        ) -> Union[th.Tensor, tuple[th.Tensor, th.Tensor]]:
         """
         Flatten all tensors in the observation dictionary and concatenate them.
         
@@ -126,7 +131,7 @@ class MaskedGinRummyPolicy(ActorCriticPolicy):
         _, action_mask = self._extract_obs_and_mask(obs)
         
         # Get features and latent vectors
-        features = self._custom_dict_flatten(obs)
+        features = self.extract_features(obs)
         latent_pi, latent_vf = self.mlp_extractor(features)
         
         # Get action logits and apply mask
@@ -158,7 +163,7 @@ class MaskedGinRummyPolicy(ActorCriticPolicy):
         
         # obs_tensor = torch.flatten(obs)
         # Get features and latent vectors
-        features = self._custom_dict_flatten(obs)
+        features = self.extract_features(obs)
         latent_pi, latent_vf = self.mlp_extractor(features)
         
         # Get action logits and apply mask
