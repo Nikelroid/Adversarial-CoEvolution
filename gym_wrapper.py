@@ -93,7 +93,7 @@ class GinRummySB3Wrapper(gym.Env):
         # Training agent takes action
         obs, reward, termination, truncation, info = self.env.last()
         if self.turn_num > 3:
-            termination = True
+            truncation = True
         self.turn_num += 1
 
 
