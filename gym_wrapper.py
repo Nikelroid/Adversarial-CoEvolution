@@ -112,7 +112,7 @@ class GinRummySB3Wrapper(gym.Env):
         
         self.env.step(action)
 
-        if self.turn_num > 1:
+        if self.turn_num > 5:
             truncation = True
         self.turn_num += 1
         
