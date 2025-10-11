@@ -4,6 +4,7 @@ from gymnasium import spaces
 from pettingzoo.classic import gin_rummy_v4
 from agents import Agent
 import random
+from hand_scoring import score_gin_rummy_hand
 
 
 class GinRummySB3Wrapper(gym.Env):
@@ -56,7 +57,10 @@ class GinRummySB3Wrapper(gym.Env):
             self.env.reset(seed=seed)
         else:
             self.env.reset()
-        
+
+        self.isit_first_round = True
+        self.starting_score = -1
+
         # Randomly assign training agent position each episode
         if self.randomize_position and random.random() < 0.5:
             self.training_agent = 'player_1'
@@ -72,6 +76,10 @@ class GinRummySB3Wrapper(gym.Env):
             agent = self.env.agent_selection
             if agent == self.training_agent:
                 obs, _, _, _, _ = self.env.last()
+                player_hand = obs['observation'][0]
+                if self.isit_first_round and sum(player_hand) == 10:           
+                    self.starting_score = score_gin_rummy_hand(player_hand)
+                    print(f'Score for starting this hand: {self.starting_score}')
                 return obs, {}
             else:
                 # Opponent plays
@@ -91,8 +99,6 @@ class GinRummySB3Wrapper(gym.Env):
         """Take a step in the environment."""
         # Training agent takes action
         obs, reward, termination, truncation, info = self.env.last()
-        print('__________')
-        print (obs['observation'])
         # Check if action is valid
         if not termination and not truncation:
             mask = obs['action_mask']
@@ -107,7 +113,14 @@ class GinRummySB3Wrapper(gym.Env):
         
         # Check if game ended
         if termination or truncation:
+            
             next_obs, _, _, _, _ = self.env.last()
+            player_hand = next_obs['observation'][0]
+            if sum(player_hand) == 10:
+                hand_score = score_gin_rummy_hand(player_hand)
+            print(f'Score for this hand: {hand_score}')
+            print('#################')
+            reward += (self.starting_score - hand_score)
             return next_obs, reward, True, False, info
         
         # Opponent's turn(s) until it's training agent's turn again
