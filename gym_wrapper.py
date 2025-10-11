@@ -17,7 +17,7 @@ class GinRummySB3Wrapper(gym.Env):
     def __init__(self, opponent_policy, randomize_position=True):
         super().__init__()
         
-        self.env = gin_rummy_v4.env(render_mode=None,knock_reward = 5, gin_reward = 10, opponents_hand_visible = False)
+        self.env = gin_rummy_v4.env(render_mode=None,knock_reward = 2, gin_reward = 5, opponents_hand_visible = False)
         self.opponent_policy: Agent = opponent_policy(self.env)
         self.randomize_position = randomize_position
         
@@ -57,7 +57,7 @@ class GinRummySB3Wrapper(gym.Env):
             self.env.reset(seed=seed)
         else:
             self.env.reset()
-
+        self.turn_num = 0
         # Randomly assign training agent position each episode
         if self.randomize_position and random.random() < 0.5:
             self.training_agent = 'player_1'
@@ -92,6 +92,10 @@ class GinRummySB3Wrapper(gym.Env):
         """Take a step in the environment."""
         # Training agent takes action
         obs, reward, termination, truncation, info = self.env.last()
+        if self.turn_num > 3:
+            termination = True
+        self.turn_num += 1
+
 
         player_hand = obs['observation'][0]
 
