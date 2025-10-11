@@ -32,7 +32,7 @@ class GinRummySB3Wrapper(gym.Env):
         
         self.observation_space = spaces.Dict({
             'observation': spaces.Box(
-                low=0, high=1, shape=obs_shape, dtype=np.float32
+                low=0, high=1, shape=obs_shape, dtype=np.int8
             ),
             'action_mask': spaces.Box(
                 low=0, high=1, shape=action_mask_shape, dtype=np.int8
@@ -97,7 +97,7 @@ class GinRummySB3Wrapper(gym.Env):
 
         if sum(player_hand) == 10:           
             r = score_gin_rummy_hand(player_hand)
-            print (f'Score for this hand: {r}')
+            print (f'Score for this hand: {r} | Overal reward: {reward}')
             reward += r
 
         # Check if action is valid
@@ -112,7 +112,7 @@ class GinRummySB3Wrapper(gym.Env):
         
         self.env.step(action)
 
-        if self.turn_num > 5:
+        if self.turn_num > 3:
             truncation = True
         self.turn_num += 1
         
